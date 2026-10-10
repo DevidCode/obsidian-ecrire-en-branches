@@ -50,6 +50,13 @@ export default class EcrireEnBranches extends Plugin {
 		// Ouvrir en cartes une note marquée, et poser le bouton de retour sur sa vue fichier.
 		this.registerEvent(this.app.workspace.on('file-open', (file) => this.surOuverture(file)))
 		this.registerEvent(this.app.workspace.on('layout-change', () => this.poserBoutons()))
+		// Un onglet restauré au démarrage n'est ouvert qu'à sa première
+		// activation : c'est là qu'il reçoit son bouton, et qu'une note en
+		// branches passe en cartes.
+		this.registerEvent(this.app.workspace.on('active-leaf-change', (leaf) => {
+			this.poserBoutons()
+			if (leaf?.view instanceof MarkdownView) this.surOuverture(leaf.view.file)
+		}))
 		// L'en-tête n'est pas encore lu à l'ouverture d'une note fraîchement synchronisée :
 		// on réessaie quand Obsidian a fini de l'analyser.
 		this.registerEvent(this.app.metadataCache.on('changed', (file) => {
@@ -73,7 +80,9 @@ export default class EcrireEnBranches extends Plugin {
 			// une note en branches restée en vue fichier ne basculerait jamais.
 			if (!this.reglages.ouvertureAuto) return
 			this.app.workspace.getLeavesOfType('markdown').forEach((leaf) => {
-				const file = (leaf.view as MarkdownView).file
+				// Un onglet encore différé n'a pas de fichier : il basculera à sa première activation.
+				if (!(leaf.view instanceof MarkdownView)) return
+				const file = leaf.view.file
 				if (file && estNoteEnBranches(this.app, file)) void this.ouvrirEnCartes(leaf, file)
 			})
 		})
@@ -83,7 +92,9 @@ export default class EcrireEnBranches extends Plugin {
 		await this.saveData(this.reglages)
 		this.appliquerMasque()
 		this.app.workspace.updateOptions()
-		this.app.workspace.getLeavesOfType(TYPE_VUE).forEach((l) => (l.view as VueBranches).redessiner())
+		this.app.workspace.getLeavesOfType(TYPE_VUE).forEach((l) => {
+			if (l.view instanceof VueBranches) l.view.redessiner()
+		})
 	}
 
 	private appliquerMasque() {
@@ -141,11 +152,19 @@ export default class EcrireEnBranches extends Plugin {
 		this.app.workspace.setActiveLeaf(vue.leaf, { focus: true })
 	}
 
-	/** Sur la vue fichier d'une note en branches : un bouton pour revenir aux cartes. */
+	/**
+	 * Sur la vue fichier d'une note en branches : un bouton pour revenir aux cartes.
+	 *
+	 * ⛔ `getLeavesOfType('markdown')` rend aussi les onglets DIFFÉRÉS : au
+	 * démarrage, Obsidian (1.7 et après) ne les ouvre qu'à leur première
+	 * activation, et leur vue n'est qu'une coquille — ni `addAction`, ni `file`.
+	 * Les traiter comme des vues fichier faisait échouer le chargement du
+	 * plugin (0.1.0). On les saute : ils sont repris à leur activation.
+	 */
 	private poserBoutons() {
 		this.app.workspace.getLeavesOfType('markdown').forEach((leaf) => {
-			const vue = leaf.view as MarkdownView
-			if (this.boutons.has(vue)) return
+			const vue = leaf.view
+			if (!(vue instanceof MarkdownView) || this.boutons.has(vue)) return
 			this.boutons.add(vue)
 			const bouton = vue.addAction('git-branch', 'Voir en branches', () => this.basculer(leaf))
 			const afficher = () => bouton.toggle(estNoteEnBranches(this.app, vue.file))
@@ -255,8 +274,7 @@ export default class EcrireEnBranches extends Plugin {
 	private async retirer(file: TFile) {
 		if (!confirm('Retirer les marqueurs de cette note ? Le texte reste, la structure en cartes est perdue.')) return
 		for (const leaf of this.app.workspace.getLeavesOfType(TYPE_VUE)) {
-			const vue = leaf.view as VueBranches
-			if (vue.file === file) await this.ouvrirEnFichier(leaf, file)
+			if (leaf.view instanceof VueBranches && leaf.view.file === file) await this.ouvrirEnFichier(leaf, file)
 		}
 		await this.app.vault.process(file, retirerMarqueurs)
 		await this.app.fileManager.processFrontMatter(file, (fm) => { delete fm['branch-writing'] })

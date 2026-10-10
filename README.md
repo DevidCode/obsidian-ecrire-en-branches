@@ -45,8 +45,9 @@ ordinaire ». Réglages : largeur des colonnes, numéros de carte, masquage des
 marqueurs, ouverture automatique.
 
 ```bash
-npm test      # le format et les gestes, sur le code réellement livré
-npm run build # main.js
+npm test               # le format et les gestes, sur le code réellement livré
+npm run build          # main.js
+npm run test:obsidian  # le démarrage, dans un vrai Obsidian isolé (écran virtuel si besoin)
 ```
 
 ## Comment ça marche
@@ -67,7 +68,7 @@ en mode lecture et à l'export.
   en aperçu en direct, chaque marqueur devient une pastille discrète `§ 1.2`.
   Dans sa démonstration, ils restent visibles entre chaque paragraphe.
 
-Trois choses valent d'être sues avant de toucher au code :
+Quatre choses valent d'être sues avant de toucher au code :
 
 - **Ne jamais ignorer un changement venu d'ailleurs.** Si la note change sur le
   disque (l'autre volet, la synchronisation) pendant qu'on écrit dans une
@@ -80,13 +81,19 @@ Trois choses valent d'être sues avant de toucher au code :
 - **Redessiner l'écran remet tous les défilements à zéro.** On les note avant,
   on les remet après les cartes — sinon chaque clic ramenait l'écran à gauche
   et le second clic d'un double-clic tombait sur une autre carte.
+- **Au démarrage, les onglets restaurés sont des coquilles.** Obsidian (1.7 et
+  après) ne les ouvre qu'à leur première activation : `getLeavesOfType('markdown')`
+  les rend, mais leur vue n'a ni `addAction` ni `file`. Toujours vérifier
+  `instanceof MarkdownView` (ou `VueBranches`) avant de s'en servir — la 0.1.0
+  ne le faisait pas, et son chargement échouait quand BRAT l'activait avec des
+  onglets encore fermés. `npm run test:obsidian` rejoue exactement ce cas.
 - **La bascule automatique vers les cartes se fait après coup.** Obsidian
   annonce l'ouverture d'une note avant d'avoir fini d'y poser sa vue fichier,
   et l'écrase ensuite par-dessus une bascule immédiate.
 
 ## État
 
-Version 0.1.0, ordinateur d'abord — la tablette (toucher, appui long) viendra
+Version 0.1.1, ordinateur d'abord — la tablette (toucher, appui long) viendra
 ensuite. Vérifié dans un **vrai Obsidian piloté**, instance isolée sur un écran
 virtuel : navigation et création au clavier, déplacement de branche,
 annulation, glisser-déposer, double vue synchronisée dans les deux sens,
