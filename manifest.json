@@ -1,8 +1,8 @@
 {
 	"id": "ecrire-en-branches",
 	"name": "Écrire en branches",
-	"version": "0.1.1",
-	"minAppVersion": "1.5.0",
+	"version": "0.2.0",
+	"minAppVersion": "1.5.7",
 	"description": "Write in small cards laid out in columns, inside an ordinary Markdown note. Lineage-compatible file format.",
 	"author": "DevidCode",
 	"isDesktopOnly": false

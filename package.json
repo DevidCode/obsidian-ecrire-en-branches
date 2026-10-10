@@ -1,6 +1,6 @@
 {
 	"name": "obsidian-ecrire-en-branches",
-	"version": "0.1.1",
+	"version": "0.2.0",
 	"description": "Write in small cards laid out in columns, inside an ordinary Markdown note.",
 	"main": "main.js",
 	"scripts": {
@@ -8,7 +8,9 @@
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
 		"test": "node esbuild.config.mjs epreuves && node --test test/*.test.mjs",
 		"version": "node version-bump.mjs && git add manifest.json versions.json",
-		"test:obsidian": "node test/obsidian/demarrage.mjs"
+		"test:obsidian": "node test/obsidian/demarrage.mjs",
+		"test:tactile": "node test/obsidian/tactile.mjs",
+		"test:bureau": "node test/obsidian/bureau.mjs"
 	},
 	"keywords": [],
 	"author": "DevidCode",

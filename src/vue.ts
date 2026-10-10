@@ -5,7 +5,8 @@
 // (getViewData). Entre les deux, tout passe par le document en mémoire —
 // l'écran est entièrement redessiné à partir de lui après chaque geste.
 
-import { MarkdownRenderer, Notice, Scope, TextFileView, TFile, WorkspaceLeaf, moment } from 'obsidian'
+import { MarkdownRenderer, Notice, Platform, Scope, TextFileView, TFile, WorkspaceLeaf, moment, setIcon } from 'obsidian'
+import { confirmer } from './confirmer'
 import { Carte, Document, analyser, aplatir, numeroter, reprendreEdition, serialiser } from './format'
 import {
 	Depot, OuCreer, Sens, ajouter, ancetres, colonnes, deplacer, deposer, descendants, fusionnerDessous,
@@ -15,6 +16,8 @@ import type EcrireEnBranches from '../main'
 
 export const TYPE_VUE = 'ecrire-en-branches'
 const TYPE_GLISSE = 'application/x-ecrire-en-branches'
+/** En dessous de cette largeur de vue, une colonne à la fois. */
+const LARGEUR_ETROITE = 640
 
 export class VueBranches extends TextFileView {
 	private doc: Document = analyser('')
@@ -26,6 +29,10 @@ export class VueBranches extends TextFileView {
 	private rendus = new Map<number, { texte: string; el: HTMLElement }>()
 	private ecran!: HTMLElement
 	private fil!: HTMLElement
+	private barre!: HTMLElement
+	/** La barre d'outils tactile est en mode « Déplacer » : quatre flèches. */
+	private modeDeplacer = false
+	private etroit = false
 
 	constructor(leaf: WorkspaceLeaf, private plugin: EcrireEnBranches) {
 		super(leaf)
@@ -43,12 +50,65 @@ export class VueBranches extends TextFileView {
 		this.fil = this.contentEl.createDiv({ cls: 'eeb-fil' })
 		this.ecran = this.contentEl.createDiv({ cls: 'eeb-ecran' })
 		this.ecran.tabIndex = 0
+		this.barre = this.contentEl.createDiv({ cls: 'eeb-barre' })
+		// La largeur de la VUE décide, pas celle de l'écran : un volet serré sur
+		// un grand écran a les mêmes besoins qu'un téléphone.
+		const observateur = new ResizeObserver(() => {
+			const etroit = this.contentEl.clientWidth > 0 && this.contentEl.clientWidth < LARGEUR_ETROITE
+			if (etroit === this.etroit) return
+			this.etroit = etroit
+			this.dessiner()
+		})
+		observateur.observe(this.contentEl)
+		this.register(() => observateur.disconnect())
+		this.registerDomEvent(window, 'resize', () => this.caserBarre())
+
+		// ⛔ Obsidian n'active les raccourcis d'une vue (`this.scope`) que
+		// lorsque son onglet DEVIENT actif. La bascule automatique remplace la
+		// vue fichier par les cartes dans le MÊME onglet, déjà actif : aucun
+		// changement, raccourcis jamais branchés — les flèches ne faisaient
+		// rien (présent dès la 0.1.0, vu en pilotant une instance neuve). On
+		// les branche donc nous-mêmes quand le focus entre dans la vue.
+		this.registerDomEvent(this.contentEl, 'focusin', () => this.brancherRaccourcis())
+		this.registerDomEvent(this.contentEl, 'focusout', (e) => {
+			if (!this.contentEl.contains(e.relatedTarget as Node | null)) this.debrancherRaccourcis()
+		})
 		this.addAction('file-text', 'Voir le fichier', () => this.plugin.basculer(this.leaf))
 		this.addAction('panel-right', 'Ouvrir le fichier à droite', () => this.plugin.ouvrirADroite(this))
 		// Cliquer dans le vide garde le clavier sur l'écran, sans rien sélectionner.
 		this.ecran.addEventListener('mousedown', (e) => {
 			if (e.target === this.ecran || (e.target as HTMLElement).hasClass('eeb-colonne')) this.ecran.focus()
 		})
+	}
+
+	private raccourcisBranches = false
+
+	private brancherRaccourcis() {
+		if (!this.scope || this.raccourcisBranches) return
+		this.app.keymap.pushScope(this.scope)
+		this.raccourcisBranches = true
+	}
+
+	private debrancherRaccourcis() {
+		if (!this.scope || !this.raccourcisBranches) return
+		this.app.keymap.popScope(this.scope)
+		this.raccourcisBranches = false
+	}
+
+	async onClose() {
+		this.debrancherRaccourcis()
+	}
+
+	/**
+	 * Le mode tactile : barre d'outils, toucher pour écrire, pas de glisser.
+	 * « auto » = l'application mobile, ou un écran dont le pointeur principal
+	 * est le doigt (tablette, écran tactile).
+	 */
+	tactile(): boolean {
+		const r = this.plugin.reglages.modeTactile
+		if (r === 'toujours') return true
+		if (r === 'jamais') return false
+		return Platform.isMobile || window.matchMedia('(pointer: coarse)').matches
 	}
 
 	// ── LE LIEN AVEC LE FICHIER ─────────────────────────────────────────────
@@ -78,6 +138,11 @@ export class VueBranches extends TextFileView {
 		const cartes = aplatir(this.doc.racines)
 		this.actif = (numero && cartes.find((c) => c.numero === numero)?.id) || cartes[0]?.id || null
 		this.edition = null
+		// À l'ouverture, le clavier va aux cartes : sans ça, les flèches ne
+		// faisaient rien avant un premier clic.
+		if (clear && this.app.workspace.getActiveViewOfType(VueBranches) === this) {
+			window.setTimeout(() => { if (this.edition === null) this.ecran?.focus() }, 0)
+		}
 		// Une note neuve (une seule carte, vide) s'ouvre prête à écrire.
 		if (clear && cartes.length === 1 && cartes[0].texte === '') {
 			this.edition = cartes[0].id
@@ -194,16 +259,21 @@ export class VueBranches extends TextFileView {
 		this.dessiner()
 	}
 
-	private effacer() {
+	private async effacer() {
 		if (this.actif === null) return
-		const place = trouver(this.doc, this.actif)
+		this.finirEdition()
+		const id = this.actif
+		const place = trouver(this.doc, id)
 		if (!place) return
 		const n = descendants(place.carte).length
-		if (n > 0 && !confirm(`Supprimer cette carte et ses ${n} carte(s) en dessous ?`)) return
+		if (n > 0 && !(await confirmer(this.app, `Supprimer cette carte et ses ${n} carte(s) en dessous ?`))) return
+		if (this.actif !== id) return // la sélection a bougé pendant la question
 		this.memoriser()
 		this.actif = supprimer(this.doc, this.actif)
 		this.modifie()
 		this.dessiner()
+		// La fenêtre de confirmation a pris le focus : on le rend à l'écran.
+		this.ecran.focus()
 	}
 
 	private fusionner() {
@@ -258,8 +328,8 @@ export class VueBranches extends TextFileView {
 			this.finirEdition()
 			return false
 		})
-		s.register([], 'Delete', horsEdition(() => this.effacer()))
-		s.register(['Mod'], 'Backspace', horsEdition(() => this.effacer()))
+		s.register([], 'Delete', horsEdition(() => void this.effacer()))
+		s.register(['Mod'], 'Backspace', horsEdition(() => void this.effacer()))
 		s.register(['Mod', 'Shift'], 'J', horsEdition(() => this.fusionner()))
 		s.register(['Mod'], 'z', horsEdition(() => this.retablir(this.annuler, this.refaire)))
 		s.register(['Mod', 'Shift'], 'z', horsEdition(() => this.retablir(this.refaire, this.annuler)))
@@ -318,11 +388,12 @@ export class VueBranches extends TextFileView {
 		})
 		zone.addEventListener('paste', (e) => this.collerImages(e, e.clipboardData?.files, zone, carte))
 		zone.addEventListener('drop', (e) => this.collerImages(e, e.dataTransfer?.files, zone, carte))
-		window.requestAnimationFrame(() => {
-			ajuster()
-			zone.focus()
-			zone.setSelectionRange(zone.value.length, zone.value.length)
-		})
+		// Le focus tout de suite, pas à l'image suivante : une frappe rapide
+		// juste après Ctrl + ↓ partait ailleurs (vu en pilotant). La zone est
+		// déjà dans la page à ce moment.
+		zone.focus()
+		zone.setSelectionRange(zone.value.length, zone.value.length)
+		window.requestAnimationFrame(ajuster)
 	}
 
 	/** Une image collée ou déposée est rangée comme Obsidian le ferait, puis liée dans la carte. */
@@ -366,6 +437,9 @@ export class VueBranches extends TextFileView {
 		const largeur = this.plugin.reglages.largeurColonne
 		this.contentEl.style.setProperty('--eeb-largeur', `${largeur}px`)
 		this.contentEl.toggleClass('eeb-numeros', this.plugin.reglages.afficherNumeros)
+		this.contentEl.toggleClass('eeb-tactile', this.tactile())
+		this.contentEl.toggleClass('eeb-etroit', this.etroit)
+		this.dessinerBarre()
 		numeroter(this.doc)
 
 		const actif = this.actif !== null ? trouver(this.doc, this.actif) : null
@@ -387,7 +461,9 @@ export class VueBranches extends TextFileView {
 		const vides = this.doc.racines.length === 0
 		if (vides) {
 			const invite = this.ecran.createDiv({ cls: 'eeb-invite' })
-			invite.setText('Note vide — Entrée pour écrire la première carte.')
+			invite.setText(this.tactile()
+				? 'Note vide — touchez « Dessous » pour écrire la première carte.'
+				: 'Note vide — Entrée pour écrire la première carte.')
 			return
 		}
 
@@ -429,11 +505,99 @@ export class VueBranches extends TextFileView {
 				col.scrollTo({ top: haut, behavior: 'smooth' })
 			})
 			const colActive = actif ? cols[actif.profondeur] : null
-			if (colActive && figee === null) {
+			if (colActive && this.etroit) {
+				// Une colonne à la fois : on amène la colonne active au bord gauche,
+				// même après un toucher — sur un téléphone, la carte touchée dans le
+				// bout de colonne qui dépasse doit venir sous les yeux.
+				this.ecran.scrollTo({ left: colActive.offsetLeft, behavior: 'smooth' })
+			} else if (colActive && figee === null) {
 				const gauche = colActive.offsetLeft - this.ecran.clientWidth / 2 + colActive.offsetWidth / 2
 				this.ecran.scrollTo({ left: Math.max(0, gauche), behavior: 'smooth' })
 			}
 		})
+	}
+
+	// ── LA BARRE D'OUTILS TACTILE ───────────────────────────────────────────
+	// En bas de la vue, sous le pouce. Des boutons de 48 px (le minimum que
+	// recommandent Apple et Google pour une cible au doigt), une icône ET un
+	// mot : un symbole seul ne se devine pas. Trois états :
+	//   - choisir : créer dessus / dessous / fille, écrire, déplacer, supprimer, annuler ;
+	//   - écrire  : terminé, et enchaîner une carte dessous ou fille sans quitter le clavier ;
+	//   - déplacer : monter, descendre, sortir d'un étage, rentrer sous la sœur, fini.
+
+	private dessinerBarre() {
+		if (!this.barre) return
+		this.barre.empty()
+		this.barre.toggle(this.tactile())
+		window.requestAnimationFrame(() => this.caserBarre())
+		if (!this.tactile()) return
+		const bouton = (icone: string, mot: string, geste: () => void, actif = true, cls = '') => {
+			const b = this.barre.createEl('button', { cls: `eeb-bouton ${cls}`, attr: { 'aria-label': mot } })
+			setIcon(b.createSpan({ cls: 'eeb-bouton-icone' }), icone)
+			b.createSpan({ cls: 'eeb-bouton-mot', text: mot })
+			b.disabled = !actif
+			// Le bouton ne prend pas le focus : pendant l'écriture, le clavier du
+			// téléphone reste ouvert d'une carte à la suivante.
+			b.addEventListener('pointerdown', (e) => e.preventDefault())
+			b.addEventListener('mousedown', (e) => e.preventDefault())
+			b.addEventListener('click', (e) => {
+				e.preventDefault()
+				geste()
+			})
+		}
+		const place = this.actif !== null ? trouver(this.doc, this.actif) : null
+		const choisie = place !== null
+
+		if (this.edition !== null) {
+			this.barre.dataset.etat = 'ecrire'
+			bouton('check', 'Terminé', () => this.finirEdition(), true, 'eeb-bouton-fort')
+			bouton('arrow-down-to-line', 'Dessous', () => this.creer('dessous'))
+			bouton('corner-down-right', 'Fille', () => this.creer('enfant'))
+			return
+		}
+
+		if (this.modeDeplacer && choisie) {
+			this.barre.dataset.etat = 'deplacer'
+			const { index, freres, parent } = place!
+			bouton('arrow-up', 'Monter', () => this.bouger('haut'), index > 0 || parent !== null)
+			bouton('arrow-down', 'Descendre', () => this.bouger('bas'), index < freres.length - 1 || parent !== null)
+			bouton('arrow-left', 'Sortir', () => this.bouger('gauche'), parent !== null)
+			bouton('arrow-right', 'Rentrer', () => this.bouger('droite'), index > 0)
+			bouton('check', 'Fini', () => { this.modeDeplacer = false; this.dessiner() }, true, 'eeb-bouton-fort')
+			return
+		}
+
+		this.modeDeplacer = false
+		this.barre.dataset.etat = 'choisir'
+		bouton('arrow-up-to-line', 'Dessus', () => this.creer('dessus'), choisie)
+		bouton('arrow-down-to-line', 'Dessous', () => this.creer('dessous'))
+		bouton('corner-down-right', 'Fille', () => this.creer('enfant'), choisie)
+		bouton('pencil', 'Écrire', () => this.actif !== null && this.editer(this.actif, false), choisie, 'eeb-bouton-fort')
+		bouton('move', 'Déplacer', () => { this.modeDeplacer = true; this.dessiner() }, choisie)
+		bouton('trash-2', 'Suppr.', () => void this.effacer(), choisie)
+		bouton('undo-2', 'Annuler', () => this.retablir(this.annuler, this.refaire), this.annuler.length > 0)
+	}
+
+	/**
+	 * Sur téléphone, la barre de navigation d'Obsidian (`.mobile-navbar`) FLOTTE
+	 * au-dessus du bas de l'écran, et recouvrait notre barre d'outils (vu en
+	 * émulant un téléphone). On mesure ce qu'elle recouvre et on remonte la
+	 * nôtre d'autant — mesuré à chaque fois, pas figé : elle peut changer de
+	 * taille, ou disparaître quand le clavier s'ouvre.
+	 */
+	private caserBarre() {
+		if (!this.barre) return
+		this.barre.style.marginBottom = ''
+		if (!this.tactile()) return
+		const nav = document.querySelector<HTMLElement>('.mobile-navbar')
+		if (!nav) return
+		const style = getComputedStyle(nav)
+		if (style.display === 'none' || style.visibility === 'hidden') return
+		const n = nav.getBoundingClientRect()
+		const v = this.contentEl.getBoundingClientRect()
+		if (n.height === 0 || n.right <= v.left || n.left >= v.right) return
+		const recouvre = v.bottom - n.top
+		if (recouvre > 0) this.barre.style.marginBottom = `${Math.ceil(recouvre) + 6}px`
 	}
 
 	private dessinerFil(carte: Carte | null) {
@@ -464,7 +628,9 @@ export class VueBranches extends TextFileView {
 			this.zoneDeTexte(carte, el)
 		} else {
 			el.appendChild(this.rendu(carte))
-			el.draggable = true
+			// Au doigt, glisser une carte se confondrait avec faire défiler : on
+			// déplace par la barre d'outils.
+			el.draggable = !this.tactile()
 		}
 		el.createDiv({ cls: 'eeb-numero', text: carte.numero })
 
@@ -475,6 +641,12 @@ export class VueBranches extends TextFileView {
 			// Le double-clic se reconnaît ici, par carte : l'écran est redessiné
 			// entre les deux clics, l'événement natif ne retrouverait pas sa cible.
 			const maintenant = Date.now()
+			// Au doigt, le double-toucher est peu fiable : toucher la carte DÉJÀ
+			// active ouvre l'écriture. Le premier toucher ne fait que choisir.
+			if (this.tactile() && carte.id === this.actif && !this.modeDeplacer) {
+				this.editer(carte.id)
+				return
+			}
 			if (this.dernierClic.id === carte.id && maintenant - this.dernierClic.quand < 450) {
 				this.dernierClic = { id: null, quand: 0 }
 				this.editer(carte.id)

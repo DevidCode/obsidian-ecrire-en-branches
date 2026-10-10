@@ -9,6 +9,7 @@ import {
 	App, MarkdownView, Notice, Plugin, PluginSettingTab, Setting, TFile, TFolder, WorkspaceLeaf, normalizePath,
 } from 'obsidian'
 import { analyser, aDesMarqueurs, convertir, numeroter, retirerMarqueurs, serialiser, textePropre } from './src/format'
+import { confirmer } from './src/confirmer'
 import { masquerMarqueurs } from './src/masque'
 import { TYPE_VUE, VueBranches, estNoteEnBranches } from './src/vue'
 
@@ -17,6 +18,7 @@ interface Reglages {
 	afficherNumeros: boolean
 	masquerMarqueurs: boolean
 	ouvertureAuto: boolean
+	modeTactile: 'auto' | 'toujours' | 'jamais'
 }
 
 const DEFAUT: Reglages = {
@@ -24,6 +26,7 @@ const DEFAUT: Reglages = {
 	afficherNumeros: false,
 	masquerMarqueurs: true,
 	ouvertureAuto: true,
+	modeTactile: 'auto',
 }
 
 export default class EcrireEnBranches extends Plugin {
@@ -272,7 +275,7 @@ export default class EcrireEnBranches extends Plugin {
 	}
 
 	private async retirer(file: TFile) {
-		if (!confirm('Retirer les marqueurs de cette note ? Le texte reste, la structure en cartes est perdue.')) return
+		if (!(await confirmer(this.app, 'Retirer les marqueurs de cette note ? Le texte reste, la structure en cartes est perdue.', 'Retirer'))) return
 		for (const leaf of this.app.workspace.getLeavesOfType(TYPE_VUE)) {
 			if (leaf.view instanceof VueBranches && leaf.view.file === file) await this.ouvrirEnFichier(leaf, file)
 		}
@@ -314,6 +317,16 @@ class OngletReglages extends PluginSettingTab {
 			.addToggle((t) => t.setValue(r.ouvertureAuto)
 				.onChange(async (v) => { r.ouvertureAuto = v; await this.plugin.sauver() }))
 
+		new Setting(containerEl)
+			.setName('Mode tactile')
+			.setDesc('Une barre d\'outils en bas de la vue, et toucher une carte déjà choisie pour y écrire. « Automatique » l\'active sur téléphone, sur tablette et sur un écran tactile.')
+			.addDropdown((d) => d
+				.addOption('auto', 'Automatique')
+				.addOption('toujours', 'Toujours')
+				.addOption('jamais', 'Jamais')
+				.setValue(r.modeTactile)
+				.onChange(async (v) => { r.modeTactile = v as Reglages['modeTactile']; await this.plugin.sauver() }))
+
 		containerEl.createEl('h3', { text: 'Raccourcis' })
 		const liste = containerEl.createEl('ul')
 		for (const ligne of [
@@ -326,5 +339,15 @@ class OngletReglages extends PluginSettingTab {
 			'Ctrl + Z / Ctrl + Maj + Z : annuler / rétablir',
 			'Glisser une carte : moitié haute = avant, moitié basse = après, bord droit = dedans',
 		]) liste.createEl('li', { text: ligne })
+
+		containerEl.createEl('h3', { text: 'Au doigt (mode tactile)' })
+		const doigt = containerEl.createEl('ul')
+		for (const ligne of [
+			'Toucher une carte : la choisir — la toucher à nouveau : écrire dedans',
+			'Barre du bas : Dessus, Dessous, Fille, Écrire, Déplacer, Suppr., Annuler',
+			'Pendant l\'écriture : Terminé, ou enchaîner une carte Dessous ou Fille',
+			'Déplacer : Monter, Descendre, Sortir (d\'un étage), Rentrer (sous la sœur du dessus), Fini',
+			'Petit écran : une colonne à la fois — glisser vers la gauche pour les filles, le fil d\'Ariane pour remonter',
+		]) doigt.createEl('li', { text: ligne })
 	}
 }

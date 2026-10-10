@@ -142,3 +142,80 @@
 	letter-spacing: 0.05em;
 	user-select: none;
 }
+
+/* ── MODE TACTILE ───────────────────────────────────────────────────────────
+   La barre d'outils, sous le pouce. Boutons de 48 px au moins : le minimum que
+   recommandent Apple (44 pt) et Google (48 dp) pour une cible au doigt. */
+
+.eeb-barre {
+	flex: none;
+	display: flex;
+	gap: 4px;
+	justify-content: center;
+	padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
+	border-top: 1px solid var(--background-modifier-border);
+	background: var(--background-secondary);
+	overflow-x: auto;
+	scrollbar-width: none;
+}
+.eeb-barre::-webkit-scrollbar { display: none; }
+
+.eeb-bouton {
+	flex: 0 0 auto;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 2px;
+	min-width: 48px;
+	min-height: 48px;
+	height: auto !important;
+	padding: 4px 6px !important;
+	border-radius: 10px;
+	background: transparent;
+	box-shadow: none !important;
+	color: var(--text-normal);
+	font-size: 11px;
+	line-height: 1.1;
+	touch-action: manipulation;
+}
+.eeb-bouton:disabled { opacity: 0.3; }
+.eeb-bouton-fort {
+	background: var(--interactive-accent) !important;
+	color: var(--text-on-accent) !important;
+}
+.eeb-bouton-icone { display: flex; }
+.eeb-bouton-icone svg { width: 20px; height: 20px; }
+
+.eeb-barre[data-etat="deplacer"] {
+	background: var(--background-modifier-hover);
+}
+
+/* Au doigt : un fil d'Ariane plus facile à toucher, et pas de double-toucher
+   qui zoome. */
+.eeb-tactile .eeb-fil-etape { padding: 6px 12px; }
+.eeb-tactile .eeb-carte { touch-action: manipulation; padding: 12px 14px; }
+
+/* ── ÉCRAN ÉTROIT : UNE COLONNE À LA FOIS ───────────────────────────────────
+   La colonne prend presque toute la largeur ; le bout de la suivante dépasse,
+   pour dire qu'on peut glisser. Le glissement horizontal s'aimante sur chaque
+   colonne. */
+
+.eeb-etroit .eeb-ecran {
+	scroll-snap-type: x mandatory;
+	overscroll-behavior-x: contain;
+}
+.eeb-etroit .eeb-colonne {
+	width: calc(100% - 40px);
+	scroll-snap-align: start;
+	padding-left: 8px;
+	padding-right: 4px;
+}
+/* Une marge après la dernière colonne : sans elle, la dernière colonne ne
+   peut pas venir au bord gauche (le défilement bute sur la fin du contenu),
+   et l'aimantation tombe à côté (vu en émulant un téléphone : 310 px au lieu
+   de 350). */
+.eeb-etroit .eeb-ecran::after {
+	content: '';
+	flex: 0 0 40px;
+}
