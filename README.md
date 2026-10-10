@@ -157,4 +157,5 @@ marqueur.
 
 ## Lien
 
-Note du vault : à créer.
+Note du vault : `4 Tools/Plugin — Écrire en branches.md` (la décision, l'infrastructure,
+les liens du vault).
