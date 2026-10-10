@@ -1,0 +1,144 @@
+/* ÉCRIRE EN BRANCHES — l'écran en colonnes.
+   Couleurs prises dans les variables du thème : le plugin suit le thème clair
+   ou sombre d'Obsidian sans rien redéfinir. */
+
+.eeb-vue {
+	--eeb-largeur: 340px;
+	display: flex;
+	flex-direction: column;
+	padding: 0 !important;
+	overflow: hidden;
+}
+
+/* Le fil d'Ariane : d'où vient la carte active. */
+.eeb-fil {
+	flex: none;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	align-items: center;
+	padding: 6px 12px;
+	min-height: 32px;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+.eeb-fil-etape {
+	cursor: pointer;
+	padding: 1px 8px;
+	border-radius: 10px;
+	background: var(--background-secondary);
+}
+.eeb-fil-etape:hover { color: var(--text-normal); }
+.eeb-fil-sep { opacity: 0.5; }
+
+/* L'écran : les colonnes côte à côte, on défile en largeur. */
+.eeb-ecran {
+	flex: 1;
+	display: flex;
+	overflow-x: auto;
+	overflow-y: hidden;
+	outline: none;
+}
+.eeb-invite {
+	margin: auto;
+	color: var(--text-faint);
+}
+
+.eeb-colonne {
+	flex: none;
+	width: var(--eeb-largeur);
+	height: 100%;
+	overflow-y: auto;
+	/* De la marge en haut et en bas : la première comme la dernière carte
+	   peuvent venir au milieu de l'écran. */
+	padding: 45vh 10px;
+	scrollbar-width: none;
+}
+.eeb-colonne::-webkit-scrollbar { display: none; }
+
+.eeb-groupe {
+	margin-bottom: 18px;
+	border-radius: 6px;
+}
+.eeb-groupe-lignee,
+.eeb-groupe-actif {
+	background: var(--background-secondary);
+}
+
+/* La carte. Par défaut estompée : seule la branche active est pleinement lisible. */
+.eeb-carte {
+	position: relative;
+	padding: 8px 12px;
+	border: 1px solid transparent;
+	border-radius: 6px;
+	background: var(--background-primary-alt);
+	opacity: 0.35;
+	transition: opacity 120ms;
+	cursor: default;
+}
+.eeb-carte + .eeb-carte { margin-top: 2px; }
+.eeb-groupe-actif .eeb-carte { opacity: 0.7; }
+.eeb-carte.eeb-lignee { opacity: 1; }
+.eeb-carte.eeb-active {
+	opacity: 1;
+	border-color: var(--interactive-accent);
+	box-shadow: 0 0 0 1px var(--interactive-accent);
+}
+/* Une carte qui a des filles porte une petite marque à droite. */
+.eeb-carte.eeb-a-des-filles::after {
+	content: '';
+	position: absolute;
+	right: -1px;
+	top: 50%;
+	width: 3px;
+	height: 40%;
+	transform: translateY(-50%);
+	border-radius: 2px;
+	background: var(--interactive-accent);
+	opacity: 0.6;
+}
+
+.eeb-contenu > :first-child { margin-top: 0; }
+.eeb-contenu > :last-child { margin-bottom: 0; }
+.eeb-contenu p { margin: 0 0 0.5em; }
+.eeb-contenu img { max-width: 100%; }
+.eeb-vide { color: var(--text-faint); }
+
+.eeb-saisie {
+	width: 100%;
+	min-height: 3em;
+	resize: none;
+	border: none !important;
+	box-shadow: none !important;
+	background: transparent !important;
+	padding: 0 !important;
+	font-family: var(--font-text);
+	font-size: var(--font-text-size);
+	line-height: var(--line-height-normal);
+	overflow: hidden;
+}
+
+.eeb-numero {
+	display: none;
+	position: absolute;
+	right: 6px;
+	bottom: 2px;
+	font-size: 10px;
+	color: var(--text-faint);
+}
+.eeb-numeros .eeb-numero { display: block; }
+
+/* Glisser-déposer : un trait dit où la carte va tomber. */
+.eeb-glissee { opacity: 0.2 !important; }
+.eeb-cible-avant { box-shadow: 0 -3px 0 0 var(--interactive-accent); opacity: 1; }
+.eeb-cible-apres { box-shadow: 0 3px 0 0 var(--interactive-accent); opacity: 1; }
+.eeb-cible-enfant { box-shadow: 3px 0 0 0 var(--interactive-accent); opacity: 1; }
+
+/* Dans l'éditeur : le marqueur masqué devient une pastille discrète. */
+.eeb-pastille {
+	font-size: 0.7em;
+	color: var(--text-faint);
+	letter-spacing: 0.05em;
+	user-select: none;
+}
